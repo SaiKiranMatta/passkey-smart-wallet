@@ -1,31 +1,41 @@
-"use client"
+"use client";
 
 import { useState, useEffect } from "react";
 import { WebAuthnP256 } from "ox";
-import { createPublicClient, http, parseAbi } from "viem";
-import { foundry, mainnet } from "viem/chains";
-import { createWebAuthnCredential, toCoinbaseSmartAccount, toWebAuthnAccount } from "viem/account-abstraction";
+import { createPublicClient, http } from "viem";
+import { foundry } from "viem/chains";
+import {
+  createWebAuthnCredential,
+  CreateWebAuthnCredentialReturnType,
+} from "viem/account-abstraction";
+import { toWebAuthnAccount } from "viem/account-abstraction";
 import { toGardenSmartAccount } from "@/utils/toGardenSmartAccount";
+import {parsePublicKey} from "webauthn-p256";
 
 interface WalletState {
-  credential: WebAuthnP256.P256Credential | null;
+  credential: CreateWebAuthnCredentialReturnType | null;
   accountAddress: string | null;
-  isRegistering: boolean;
+  isLoading: boolean;
   error: string | null;
 }
 
-const FACTORY_ABI = parseAbi([
-  "function createAccount(bytes calldata webAuthnPubKey, uint256 nonce) external payable returns (address)",
-  "function getAddress(bytes calldata webAuthnPubKey, uint256 nonce) external view returns (address)",
-]);
+interface StoredCredential {
+  email: string;
+  credential: CreateWebAuthnCredentialReturnType;
+  accountAddress: string;
+}
 
 export default function WebAuthnWallet() {
   const [state, setState] = useState<WalletState>({
     credential: null,
     accountAddress: null,
-    isRegistering: false,
+    isLoading: false,
     error: null,
   });
+
+  const [isLoginMode, setIsLoginMode] = useState(false);
+  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
 
   const client = createPublicClient({
     chain: foundry,
@@ -33,62 +43,174 @@ export default function WebAuthnWallet() {
   });
 
   useEffect(() => {
-    // Load stored credential from localStorage
-    const storedCredential = localStorage.getItem("webauthn_credential");
-    const storedAddress = localStorage.getItem("wallet_address");
-
-    if (storedCredential && storedAddress) {
+    // Load stored credential from localStorage for the current session
+    const currentSession = localStorage.getItem("current_session");
+    if (currentSession) {
+      const { credential, accountAddress } = JSON.parse(currentSession);
       setState((prev) => ({
         ...prev,
-        credential: JSON.parse(storedCredential),
-        accountAddress: storedAddress,
+        credential,
+        accountAddress,
       }));
     }
   }, []);
 
-  const registerNewAccount = async (username: string) => {
-    setState((prev) => ({ ...prev, isRegistering: true, error: null }));
+  const storeCredential = (
+    email: string,
+    credential: CreateWebAuthnCredentialReturnType,
+    accountAddress: string
+  ) => {
+    // Store in local storage for persistence
+    const storedCredentials = JSON.parse(
+      localStorage.getItem("stored_credentials") || "[]"
+    );
+    const newCredential: StoredCredential = {
+      email,
+      credential,
+      accountAddress,
+    };
+
+    // Check if email already exists and update if it does
+    const existingIndex = storedCredentials.findIndex(
+      (c: StoredCredential) => c.email === email
+    );
+    if (existingIndex >= 0) {
+      storedCredentials[existingIndex] = newCredential;
+    } else {
+      storedCredentials.push(newCredential);
+    }
+
+    localStorage.setItem(
+      "stored_credentials",
+      JSON.stringify(storedCredentials)
+    );
+
+    // Store current session
+    localStorage.setItem(
+      "current_session",
+      JSON.stringify({ credential, accountAddress })
+    );
+  };
+
+  const registerNewAccount = async () => {
+    if (!email || !username) {
+      setState((prev) => ({
+        ...prev,
+        error: "Both email and username are required",
+      }));
+      return;
+    }
+
+    setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // Create new WebAuthn credential
       const credential = await createWebAuthnCredential({
         name: username,
       });
 
       const account = toWebAuthnAccount({
         credential,
-      })
+      });
+
       const smartAccount = await toGardenSmartAccount({
-        client, 
+        client,
         owner: account,
-      })
+      });
 
-      localStorage.setItem("garden_acc_address", smartAccount.address);
-      
-      // // Get predicted account address
-      // const predictedAddress = await client.readContract({
-      //   address: process.env.NEXT_PUBLIC_FACTORY_ADDRESS as `0x${string}`,
-      //   abi: FACTORY_ABI,
-      //   functionName: "getAddress",
-      //   args: [webAuthnPubKey, 0n],
-      // });
+      // Store credentials with email
+      storeCredential(email, credential, smartAccount.address);
 
-      // Store credentials
-      localStorage.setItem("webauthn_credential", JSON.stringify(credential));
-      // localStorage.setItem("wallet_address", predictedAddress);
-
-      // setState((prev) => ({
-      //   ...prev,
-      //   credential,
-      //   accountAddress: predictedAddress,
-      //   isRegistering: false,
-      // }));
+      setState((prev) => ({
+        ...prev,
+        credential,
+        accountAddress: smartAccount.address,
+        isLoading: false,
+      }));
     } catch (error) {
       console.error("Registration failed:", error);
       setState((prev) => ({
         ...prev,
-        isRegistering: false,
+        isLoading: false,
         error: error instanceof Error ? error.message : "Registration failed",
+      }));
+    }
+  };
+
+  const login = async () => {
+    if (!email) {
+      setState((prev) => ({ ...prev, error: "Email is required" }));
+      return;
+    }
+
+    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      // Get stored credential for this email
+      const storedCredentials: StoredCredential[] = JSON.parse(
+        localStorage.getItem("stored_credentials") || "[]"
+      );
+      const storedCredential = storedCredentials.find((c) => c.email === email);
+
+      if (!storedCredential) {
+        throw new Error("No account found for this email");
+      }
+
+      // Verify the credential
+      const { metadata, signature } = await WebAuthnP256.sign({
+        credentialId: storedCredential.credential.id,
+        challenge: `0x${Buffer.from("login-verification").toString(
+          "hex"
+        )}` as `0x${string}`,
+      });
+
+
+      const verified = await WebAuthnP256.verify({
+        metadata,
+        challenge: `0x${Buffer.from("login-verification").toString('hex')}` as `0x${string}`,
+        publicKey: {
+          ...parsePublicKey(storedCredential.credential.publicKey),
+          prefix: parsePublicKey(storedCredential.credential.publicKey).prefix || 0x04,
+        },
+        signature,
+      });
+
+      if (!verified) {
+        throw new Error("Authentication failed");
+      }
+
+      // Create account instance
+      const account = toWebAuthnAccount({
+        credential: storedCredential.credential,
+      });
+
+      const smartAccount = await toGardenSmartAccount({
+        client,
+        owner: account,
+      });
+
+      console.log("login address", smartAccount.address)
+
+      // Store current session
+      localStorage.setItem(
+        "current_session",
+        JSON.stringify({
+          credential: storedCredential.credential,
+          accountAddress: smartAccount.address,
+        })
+      );
+
+      setState((prev) => ({
+        ...prev,
+        credential: storedCredential.credential,
+        accountAddress: smartAccount.address,
+        isLoading: false,
+      }));
+    } catch (error) {
+      console.error("Login failed:", error);
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: error instanceof Error ? error.message : "Login failed",
       }));
     }
   };
@@ -99,14 +221,18 @@ export default function WebAuthnWallet() {
     try {
       const { metadata, signature } = await WebAuthnP256.sign({
         credentialId: state.credential.id,
-        challenge: `0x${Buffer.from(message).toString('hex')}` as `0x${string}`,
+        challenge: `0x${Buffer.from(message).toString("hex")}` as `0x${string}`,
       });
 
-      // Verify signature
+      console.log(signature)
+
       const verified = await WebAuthnP256.verify({
         metadata,
         challenge: `0x${Buffer.from(message).toString('hex')}` as `0x${string}`,
-        publicKey: state.credential.publicKey,
+        publicKey: {
+          ...parsePublicKey(state.credential.publicKey),
+          prefix: parsePublicKey(state.credential.publicKey).prefix || 0x04,
+        },
         signature,
       });
 
@@ -121,11 +247,6 @@ export default function WebAuthnWallet() {
     }
   };
 
-  // Helper function to encode public key for smart contract
-
-
-  const [username, setUsername] = useState<string>("");
-
   return (
     <div className="p-6 mx-auto bg-white rounded-xl shadow-md flex flex-col items-center justify-center min-h-screen">
       {state.error && (
@@ -135,20 +256,44 @@ export default function WebAuthnWallet() {
       )}
 
       {!state.credential ? (
-        <div className=" gap-4 flex-col text-black">
+        <div className="gap-4 flex-col text-black">
+          <div className="mb-4">
+            <button
+              onClick={() => setIsLoginMode(!isLoginMode)}
+              className="text-blue-500 underline mb-2"
+            >
+              Switch to {isLoginMode ? "Register" : "Login"}
+            </button>
+          </div>
+
           <input
-            type="text"
-            placeholder="Enter username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            type="email"
+            placeholder="Enter email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             className="w-full rounded-xl py-2 pl-3 text-sm pr-10 border mb-2 focus:outline-none focus:ring-2 focus:ring-[#D7E96D]"
           />
+
+          {!isLoginMode && (
+            <input
+              type="text"
+              placeholder="Enter username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full rounded-xl py-2 pl-3 text-sm pr-10 border mb-2 focus:outline-none focus:ring-2 focus:ring-[#D7E96D]"
+            />
+          )}
+
           <button
-            onClick={() => registerNewAccount(username)}
-            disabled={state.isRegistering}
+            onClick={isLoginMode ? login : registerNewAccount}
+            disabled={state.isLoading}
             className="w-full bg-blue-500 text-white py-2 px-4 rounded-xl hover:bg-blue-600 disabled:bg-blue-300"
           >
-            {state.isRegistering ? "Registering..." : "Register New Wallet"}
+            {state.isLoading
+              ? "Processing..."
+              : isLoginMode
+              ? "Login"
+              : "Register New Wallet"}
           </button>
         </div>
       ) : (
@@ -167,17 +312,17 @@ export default function WebAuthnWallet() {
 
           <button
             onClick={() => {
-              localStorage.clear();
+              localStorage.removeItem("current_session");
               setState({
                 credential: null,
                 accountAddress: null,
-                isRegistering: false,
+                isLoading: false,
                 error: null,
               });
             }}
             className="w-full bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600"
           >
-            Reset Wallet
+            Logout
           </button>
         </div>
       )}

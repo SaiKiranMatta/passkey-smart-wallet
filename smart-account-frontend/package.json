@@ -13,7 +13,8 @@
     "next": "15.1.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "viem": "^2.22.10"
+    "viem": "^2.22.10",
+    "webauthn-p256": "^0.0.10"
   },
   "devDependencies": {
     "@types/node": "^20",
