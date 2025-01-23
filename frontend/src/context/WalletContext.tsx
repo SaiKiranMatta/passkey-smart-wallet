@@ -18,7 +18,10 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { foundry } from "viem/chains";
 import { type CreateWebAuthnCredentialReturnType } from "viem/account-abstraction";
 import { toWebAuthnAccount } from "viem/account-abstraction";
-import { decodeSignature, toGardenSmartAccount } from "@/utils/toGardenSmartAccount";
+import {
+  decodeSignature,
+  toGardenSmartAccount,
+} from "@/utils/toGardenSmartAccount";
 import { BaseError } from "viem";
 import { paymasterAbi } from "@/abi/paymasterAbi";
 
@@ -55,6 +58,42 @@ interface WalletContextType {
   logout: () => void;
 }
 
+interface StoredCredential {
+  email: string;
+  credential: CreateWebAuthnCredentialReturnType;
+  accountAddress: string;
+}
+
+const storeCredential = (
+  email: string,
+  credential: CreateWebAuthnCredentialReturnType,
+  accountAddress: string
+) => {
+  // Store in local storage for persistence
+  const storedCredentials = JSON.parse(
+    localStorage.getItem("stored_credentials") || "[]"
+  );
+  const newCredential: StoredCredential = {
+    email,
+    credential,
+    accountAddress,
+  };
+  // Check if email already exists and update if it does
+  const existingIndex = storedCredentials.findIndex(
+    (c: StoredCredential) => c.email === email
+  );
+  if (existingIndex >= 0) {
+    storedCredentials[existingIndex] = newCredential;
+  } else {
+    storedCredentials.push(newCredential);
+  }
+  localStorage.setItem("stored_credentials", JSON.stringify(storedCredentials));
+  // Store current session
+  localStorage.setItem(
+    "current_session",
+    JSON.stringify({ credential, accountAddress })
+  );
+};
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
@@ -124,6 +163,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           accountAddress: smartAccount.address,
         })
       );
+
+      storeCredential(email, credential, smartAccount.address);
     } catch (error) {
       setState((prev) => ({
         ...prev,
@@ -140,152 +181,174 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     to: Address,
     value: bigint = 0n,
     data: `0x${string}` = "0x"
-) => {
+  ) => {
     if (!state.smartAccount) {
-        throw new Error("Smart account not initialized");
+      throw new Error("Smart account not initialized");
     }
 
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-        // Get the current nonce
-        const nonce = await state.smartAccount.getNonce();
-        
-        // Check if account is deployed
-        const isDeployed = await state.smartAccount.isDeployed();
-        
-        // Get initCode if account is not deployed
-        let initCode: `0x${string}` = "0x";
-        if (!isDeployed) {
-            const { factory, factoryData } = await state.smartAccount.getFactoryArgs();
-            initCode = concat([factory, factoryData]) as `0x${string}`;
+      // Get the current nonce
+      const nonce = await state.smartAccount.getNonce();
+
+      // Check if account is deployed
+      const isDeployed = await state.smartAccount.isDeployed();
+
+      // Get initCode if account is not deployed
+      let initCode: `0x${string}` = "0x";
+      if (!isDeployed) {
+        const { factory, factoryData } =
+          await state.smartAccount.getFactoryArgs();
+        initCode = concat([factory, factoryData]) as `0x${string}`;
+      }
+
+      // Get the current gas prices
+      const { maxFeePerGas, maxPriorityFeePerGas } =
+        await client.estimateFeesPerGas();
+
+      // Encode the function call
+      const callData = await state.smartAccount.encodeCalls([
+        {
+          to,
+          value,
+          data,
+        },
+      ]);
+
+      const paymasterAddress =
+        process.env.NEXT_PUBLIC_PAYMASTER_ADDRESS ?? "0x";
+      console.log(paymasterAddress);
+      const validUntil = Math.floor(Date.now() / 1000) + 3600;
+
+      const paymasterAndData = encodeFunctionData({
+        abi: paymasterAbi,
+        functionName: "getPaymasterData",
+        args: [state.smartAccount.address, BigInt(validUntil)],
+      });
+      // Create the user operation with proper structure
+      const MAX_UINT120 = BigInt("0xffffffffffffffffffffffffffff");
+
+      const userOperation = {
+        sender: state.smartAccount.address,
+        nonce: BigInt(nonce),
+        initCode,
+        callData,
+        callGasLimit: 10000n,
+        verificationGasLimit: 10000n,
+        preVerificationGas: 5000n,
+        maxFeePerGas,
+        maxPriorityFeePerGas,
+        paymasterAndData,
+        signature: "0x",
+      } as const;
+
+      const gasValues = [
+        userOperation.preVerificationGas,
+        userOperation.verificationGasLimit,
+        userOperation.callGasLimit,
+        userOperation.maxFeePerGas,
+        userOperation.maxPriorityFeePerGas,
+      ];
+
+      gasValues.forEach((value) => {
+        if (value > MAX_UINT120) {
+          throw new Error(`Gas value ${value} exceeds uint120 max`);
         }
+      });
 
-        // Get the current gas prices
-        const { maxFeePerGas, maxPriorityFeePerGas } = await client.estimateFeesPerGas();
+      //wait 2 seconds before signing the transaction to prevent the webauth failing
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
-        // Encode the function call
-        const callData = await state.smartAccount.encodeCalls([
-            {
-                to,
-                value,
-                data,
-            },
-        ]);
+      // Sign the user operation
+      const signature = await state.smartAccount.signUserOperation(
+        userOperation
+      );
 
-        const paymasterAddress = process.env.NEXT_PUBLIC_PAYMASTER_ADDRESS ?? "0x";
-        console.log(paymasterAddress);
-        const validUntil = Math.floor(Date.now() / 1000) + 3600;
+      const accountGasLimits = concat([
+        pad(numberToHex(userOperation.verificationGasLimit), { size: 16 }),
+        pad(numberToHex(userOperation.callGasLimit), { size: 16 }),
+      ]);
+      const gasFees = concat([
+        pad(numberToHex(userOperation.maxPriorityFeePerGas), { size: 16 }),
+        pad(numberToHex(userOperation.maxFeePerGas), { size: 16 }),
+      ]);
 
-        const paymasterAndData = encodeFunctionData({
-          abi: paymasterAbi, 
-          functionName: 'getPaymasterData',
-          args: [state.smartAccount.address, BigInt(validUntil)]
-      }); 
-        // Create the user operation with proper structure
-        const userOperation = {
-            sender: state.smartAccount.address,
-            nonce: BigInt(nonce),
-            initCode,
-            callData,
-            callGasLimit: 200000000n,
-            verificationGasLimit: 200000000n,
-            preVerificationGas: 200000000n,
-            maxFeePerGas,
-            maxPriorityFeePerGas,
-            paymasterAndData,
-            signature: "0x",
-        } as const;
+      // Structure the signed operation
+      const formattedUserOp = [
+        userOperation.sender,
+        userOperation.nonce,
+        userOperation.initCode,
+        userOperation.callData,
+        accountGasLimits,
+        userOperation.preVerificationGas,
+        gasFees,
+        userOperation.paymasterAndData,
+        signature,
+      ];
 
-        //wait 2 seconds before signing the transaction to prevent the webauth failing
-        await new Promise(resolve => setTimeout(resolve, 2000));
+      const tempBundlerAccount = privateKeyToAccount(
+        "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
+      );
 
-        // Sign the user operation
-        const signature = await state.smartAccount.signUserOperation(userOperation);
+      // Create wallet client
+      const walletClient = createWalletClient({
+        account: tempBundlerAccount,
+        chain: foundry,
+        transport: http("http://localhost:8545"),
+      });
 
-        const accountGasLimits = concat([
-            pad(numberToHex(userOperation.verificationGasLimit), { size: 16 }),
-            pad(numberToHex(userOperation.callGasLimit), { size: 16 }),
-        ]);
+      console.log("gasfees", gasFees);
+      console.log("accountGasLimits", accountGasLimits);
+      // Send the transaction
+      const hash = await walletClient.writeContract({
+        address: state.smartAccount.entryPoint.address,
+        abi: state.smartAccount.entryPoint.abi,
+        functionName: "handleOps",
+        args: [[formattedUserOp], state.smartAccount.address],
+      });
 
-        const gasFees = concat([
-            pad(numberToHex(userOperation.maxPriorityFeePerGas), { size: 16 }),
-            pad(numberToHex(userOperation.maxFeePerGas), { size: 16 }),
-        ]);
-
-        // Structure the signed operation
-        const formattedUserOp = [
-            userOperation.sender,
-            userOperation.nonce,
-            userOperation.initCode,
-            userOperation.callData,
-            accountGasLimits,
-            userOperation.preVerificationGas,
-            gasFees,
-            userOperation.paymasterAndData,
-            signature,
-        ];
-
-        const tempBundlerAccount = privateKeyToAccount(
-            "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
-        );
-
-        // Create wallet client
-        const walletClient = createWalletClient({
-            account: tempBundlerAccount,
-            chain: foundry,
-            transport: http("http://localhost:8545"),
-        });
-
-        // Send the transaction
-        const hash = await walletClient.writeContract({
-            address: state.smartAccount.entryPoint.address,
-            abi: state.smartAccount.entryPoint.abi,
-            functionName: "handleOps",
-            args: [[formattedUserOp], state.smartAccount.address],
-        });
-
-        // Wait for the transaction to be mined
-        const receipt = await client.waitForTransactionReceipt({ hash });
-        return receipt;
+      // Wait for the transaction to be mined
+      const receipt = await client.waitForTransactionReceipt({ hash });
+      return receipt;
     } catch (error) {
-        console.error("Error sending transaction:", error);
-        setState((prev) => ({
-            ...prev,
-            error: error instanceof Error ? error.message : "Failed to send transaction",
-        }));
-        throw error;
+      console.error("Error sending transaction:", error);
+      setState((prev) => ({
+        ...prev,
+        error:
+          error instanceof Error ? error.message : "Failed to send transaction",
+      }));
+      throw error;
     } finally {
-        setState((prev) => ({ ...prev, isLoading: false }));
+      setState((prev) => ({ ...prev, isLoading: false }));
     }
-};
+  };
 
-const createSessionKey = async () => {
-  if (!state.smartAccount) return;
+  const createSessionKey = async () => {
+    if (!state.smartAccount) return;
 
-  setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
-  try {
+    try {
       // Generate a new private key for the session
       const privateKey = generatePrivateKey();
       const sessionKey = privateKeyToAccount(privateKey);
 
       // Hash the session key address
-      const messageHash = keccak256(encodeAbiParameters(
-          [{ type: 'address' }],
-          [sessionKey.address]
-      ));
+      const messageHash = keccak256(
+        encodeAbiParameters([{ type: "address" }], [sessionKey.address])
+      );
 
       // Sign the message using WebAuthn
       const signature = await state.smartAccount.signMessage({
-          message: messageHash,
+        message: messageHash,
       });
 
       // Encode the createSessionKey function call
       const data = encodeFunctionData({
-          abi: [CREATE_SESSION_KEY_ABI],
-          functionName: "createSessionKey",
-          args: [sessionKey.address, signature],
+        abi: [CREATE_SESSION_KEY_ABI],
+        functionName: "createSessionKey",
+        args: [sessionKey.address, signature],
       });
 
       // Send the user operation to create session key
@@ -293,27 +356,29 @@ const createSessionKey = async () => {
 
       // Update smart account with session key
       const updatedSmartAccount = await toGardenSmartAccount({
-          client,
-          owner: state.smartAccount.owner,
-          sessionKey,
-          address: state.smartAccount.address,
+        client,
+        owner: state.smartAccount.owner,
+        sessionKey,
+        address: state.smartAccount.address,
       });
 
       setState((prev) => ({
-          ...prev,
-          smartAccount: updatedSmartAccount,
-          sessionKey,
-          isLoading: false,
+        ...prev,
+        smartAccount: updatedSmartAccount,
+        sessionKey,
+        isLoading: false,
       }));
-
-  } catch (error) {
+    } catch (error) {
       setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: error instanceof Error ? error.message : "Session key creation failed",
+        ...prev,
+        isLoading: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Session key creation failed",
       }));
-  }
-};
+    }
+  };
 
   const signMessage = async (message: string) => {
     if (!state.smartAccount) return;
