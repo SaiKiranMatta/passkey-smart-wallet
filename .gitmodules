@@ -1,15 +1,15 @@
-[submodule "smart-account-contracts/lib/forge-std"]
-	path = smart-account-contracts/lib/forge-std
+[submodule "contracts/lib/forge-std"]
+	path = contracts/lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
-[submodule "smart-account-contracts/lib/account-abstraction"]
-	path = smart-account-contracts/lib/account-abstraction
+[submodule "contracts/lib/account-abstraction"]
+	path = contracts/lib/account-abstraction
 	url = https://github.com/eth-infinitism/account-abstraction
-[submodule "smart-account-contracts/lib/openzeppelin-contracts"]
-	path = smart-account-contracts/lib/openzeppelin-contracts
+[submodule "contracts/lib/openzeppelin-contracts"]
+	path = contracts/lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
-[submodule "smart-account-contracts/lib/webauthn-sol"]
-	path = smart-account-contracts/lib/webauthn-sol
+[submodule "contracts/lib/webauthn-sol"]
+	path = contracts/lib/webauthn-sol
 	url = https://github.com/base-org/webauthn-sol
-[submodule "smart-account-contracts/lib/solady"]
-	path = smart-account-contracts/lib/solady
+[submodule "contracts/lib/solady"]
+	path = contracts/lib/solady
 	url = https://github.com/vectorized/solady

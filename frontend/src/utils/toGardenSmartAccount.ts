@@ -164,7 +164,6 @@ export async function toGardenSmartAccount(
 
     async sign(parameters) {
       // If session key is available and valid, use it for signing
-      console.log("sessionkey",sessionKey)
       if (sessionKey?.sign) {
         const signature = await sessionKey.sign({ hash: parameters.hash });
         return encodeSignature({ isSessionKey: true, signature });
