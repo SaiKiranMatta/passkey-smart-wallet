@@ -2,13 +2,12 @@ import { abi } from "@/abi/abi";
 import { factoryAbi } from "@/abi/factoryAbi";
 import type { Address, TypedData } from "abitype";
 import type * as WebAuthnP256 from "ox/WebAuthnP256";
-import * as Signature from 'ox/Signature'
+import * as Signature from "ox/Signature";
 
 import {
   Assign,
   BaseError,
   Client,
-  concat,
   decodeFunctionData,
   encodeAbiParameters,
   encodeFunctionData,
@@ -68,7 +67,7 @@ export async function toGardenSmartAccount(
 
   let address = parameters.address;
 
-  toCoinbaseSmartAccount
+  toCoinbaseSmartAccount;
 
   const entryPoint = {
     abi: entryPoint07Abi,
@@ -180,12 +179,10 @@ export async function toGardenSmartAccount(
       const { signature, webauthn } = await owner.sign({
         hash: parameters.hash,
       });
-      const encodedSignature = encodeSignature({
+      return encodeSignature({
         isSessionKey: false,
         signature: toWebAuthnSignature({ webauthn, signature }),
       });
-      console.log("encoded signature in sign function :", encodedSignature);
-      return encodedSignature
     },
 
     async signMessage(parameters) {
@@ -221,9 +218,7 @@ export async function toGardenSmartAccount(
         },
       });
 
-      const signature = await this.sign!({ hash });
-      console.log("signature before returning in signUserOperation function :", signature);
-      return signature
+      return await this.sign!({ hash });
     },
   });
 }
@@ -243,25 +238,16 @@ function encodeWebAuthnPubKey(owner: WebAuthnAccount): Hex {
 
   // Extract x and y coordinates from the uncompressed public key
   const x = BigInt(`0x${cleanHex.slice(0, 64)}`);
-  const y = BigInt(`0x${cleanHex.slice(64, 128)}`); // Take the last 64 characters
+  const y = BigInt(`0x${cleanHex.slice(64, 128)}`);
 
-  // Encode the extracted x and y coordinates using ABI encoding
-  return encodeFunctionData({
-    abi: [
-      {
-        inputs: [
-          { name: "x", type: "uint256" },
-          { name: "y", type: "uint256" },
-        ],
-        name: "encode",
-        outputs: [{ name: "", type: "bytes" }],
-        stateMutability: "pure",
-        type: "function",
-      },
+  return encodeAbiParameters(
+    [
+      { name: "x", type: "uint256" },
+      { name: "y", type: "uint256" },
     ],
-    functionName: "encode",
-    args: [x, y],
-  });
+    [x, y]
+  );
+
 }
 
 /** @internal */
@@ -269,31 +255,31 @@ export function toWebAuthnSignature({
   webauthn,
   signature,
 }: {
-  webauthn: WebAuthnP256.SignMetadata
-  signature: Hex
+  webauthn: WebAuthnP256.SignMetadata;
+  signature: Hex;
 }) {
-  const { r, s } = Signature.fromHex(signature)
+  const { r, s } = Signature.fromHex(signature);
   return encodeAbiParameters(
     [
       {
         components: [
           {
-            name: 'authenticatorData',
-            type: 'bytes',
+            name: "authenticatorData",
+            type: "bytes",
           },
-          { name: 'clientDataJSON', type: 'bytes' },
-          { name: 'challengeIndex', type: 'uint256' },
-          { name: 'typeIndex', type: 'uint256' },
+          { name: "clientDataJSON", type: "bytes" },
+          { name: "challengeIndex", type: "uint256" },
+          { name: "typeIndex", type: "uint256" },
           {
-            name: 'r',
-            type: 'uint256',
+            name: "r",
+            type: "uint256",
           },
           {
-            name: 's',
-            type: 'uint256',
+            name: "s",
+            type: "uint256",
           },
         ],
-        type: 'tuple',
+        type: "tuple",
       },
     ],
     [
@@ -305,10 +291,9 @@ export function toWebAuthnSignature({
         r,
         s,
       },
-    ],
-  )
+    ]
+  );
 }
-
 
 function encodeSignature({
   isSessionKey,
@@ -317,10 +302,20 @@ function encodeSignature({
   isSessionKey: boolean;
   signature: Hex;
 }): Hex {
-  const encodedSignature =  concat([
-    isSessionKey ? '0x01' : '0x00',
-    signature,
-  ])
-  console.log("encoded signature", encodedSignature)
-  return encodedSignature
+  const encodedSignature = encodeAbiParameters(
+    [
+      {
+        name: "isSessionKey",
+        type: "bool",
+      },
+      {
+        name: "signature",
+        type: "bytes",
+      },
+    ],
+    [isSessionKey, signature]
+  );
+
+  console.log("encodedSignature", encodeSignature);
+  return encodedSignature;
 }
