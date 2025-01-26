@@ -5,6 +5,7 @@ pragma solidity ^0.8.24;
 import {Script, console2} from "forge-std/Script.sol";
 import {EntryPoint} from "@account-abstraction/contracts/core/EntryPoint.sol";
 import {SmartAccount} from "../src/SmartAccount.sol";
+import {IEntryPoint} from "@account-abstraction/contracts/interfaces/IEntryPoint.sol";
 import {SmartAccountFactory} from "../src/SmartAccountFactory.sol";
 import {SimplePaymaster} from "../src/Paymaster.sol";
 
@@ -12,17 +13,21 @@ contract DeploySmartAccount is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(deployerPrivateKey);
+        vm.recordLogs();
 
         // Deploy EntryPoint
         EntryPoint entryPoint = new EntryPoint();
         console2.log("EntryPoint deployed at:", address(entryPoint));
 
         // Deploy SimplePaymaster
-        SimplePaymaster paymaster = new SimplePaymaster(address(entryPoint));
+        SimplePaymaster paymaster = new SimplePaymaster(IEntryPoint(address(entryPoint)));
         console2.log("SimplePaymaster deployed at:", address(paymaster));
 
-        // Fund the paymaster
-        paymaster.depositTo{value: 1 ether}();
+        // Fund the paymaster using the inherited deposit method
+        paymaster.deposit{value: 600 ether}();
+        
+        // Add stake for the paymaster
+        paymaster.addStake{value: 600 ether}(86400); // 1 day unstake delay
 
         // Deploy SmartAccount Implementation
         SmartAccount smartAccountImpl = new SmartAccount(address(entryPoint));
