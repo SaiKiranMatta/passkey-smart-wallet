@@ -314,29 +314,3 @@ function encodeSignature({
     args: [isSessionKey, signature],
   });
 }
-
-export function decodeSignature(signature: Hex): { isSessionKey: boolean; signature: Hex } {
-  const result = decodeFunctionData({
-    abi: [
-      {
-        inputs: [
-          { name: "isSessionKey", type: "bool" },
-          { name: "signature", type: "bytes" },
-        ],
-        name: "encode",
-        outputs: [{ name: "", type: "bytes" }],
-        type: "function",
-      },
-    ],
-    data: signature,
-  });
-
-  if (!result.args || result.args.length !== 2) {
-    throw new Error("Invalid signature format");
-  }
-
-  return {
-    isSessionKey: result.args[0] as boolean,
-    signature: result.args[1] as Hex,
-  };
-}
