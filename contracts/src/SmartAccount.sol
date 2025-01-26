@@ -114,9 +114,9 @@ contract SmartAccount is IAccount, UUPSUpgradeable, Initializable {
         bytes32 userOpHash,
         uint256 missingAccountFunds
     ) external requireFromEntryPoint returns (uint256 validationData) {
-        // validationData = _validateSignature(userOp, userOpHash);
+        validationData = _validateSignature(userOp, userOpHash);
         // _payPrefund(missingAccountFunds);
-         validationData = 0;
+        //  validationData = 0;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -143,7 +143,7 @@ contract SmartAccount is IAccount, UUPSUpgradeable, Initializable {
             WebAuthn.WebAuthnAuth memory auth = abi.decode(signature, (WebAuthn.WebAuthnAuth));
             bool isValidOwner = WebAuthn.verify({
                 challenge: abi.encode(userOpHash),
-                requireUV: true,
+                requireUV: false,
                 webAuthnAuth: auth,
                 x: ownerPubKeyX,
                 y: ownerPubKeyY

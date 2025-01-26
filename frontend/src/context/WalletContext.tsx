@@ -13,7 +13,11 @@ import {
 } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { foundry } from "viem/chains";
-import { type CreateWebAuthnCredentialReturnType } from "viem/account-abstraction";
+import {
+  toPackedUserOperation,
+  UserOperation,
+  type CreateWebAuthnCredentialReturnType,
+} from "viem/account-abstraction";
 import { toWebAuthnAccount } from "viem/account-abstraction";
 import { toGardenSmartAccount } from "@/utils/toGardenSmartAccount";
 
@@ -185,12 +189,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const isDeployed = await state.smartAccount.isDeployed();
 
       // Get initCode if account is not deployed
-      let initCode: `0x${string}` = "0x";
-      if (!isDeployed) {
-        const { factory, factoryData } =
-          await state.smartAccount.getFactoryArgs();
-        initCode = concat([factory, factoryData]) as `0x${string}`;
-      }
 
       // Get the current gas prices
       const { maxFeePerGas, maxPriorityFeePerGas } =
@@ -205,51 +203,58 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         },
       ]);
 
-      const paymasterAddress =
+      const paymaster =
         (process.env.NEXT_PUBLIC_PAYMASTER_ADDRESS as `0x${string}`) ?? "0x";
 
       // Calculate validUntil timestamp (1 hour from now)
       const validUntil = Math.floor(Date.now() / 1000) + 3600;
       const validAfter = Math.floor(Date.now() / 1000) - 3600; // current timestamp
 
-      const paymasterAndData = concat([
-        paymasterAddress,
-        pad(numberToHex(20000n), { size: 16 }),
-        pad(numberToHex(10000n), { size: 16 }),
+      const paymasterData = concat([
         pad(numberToHex(validUntil), { size: 32 }),
         pad(numberToHex(validAfter), { size: 32 }),
       ]);
 
-      // Create the user operation with proper structure
-      const MAX_UINT120 = BigInt("0xffffffffffffffffffffffffffff");
+      let userOperation: UserOperation;
 
-      const userOperation = {
-        sender: state.smartAccount.address,
-        nonce: BigInt(nonce),
-        initCode,
-        callData,
-        callGasLimit: 10000n,
-        verificationGasLimit: 200000n,
-        preVerificationGas: 20000n,
-        maxFeePerGas,
-        maxPriorityFeePerGas,
-        paymasterAndData,
-        signature: "0x",
-      } as const;
+      if (!isDeployed) {
+        const { factory, factoryData } =
+          await state.smartAccount.getFactoryArgs();
 
-      const gasValues = [
-        userOperation.preVerificationGas,
-        userOperation.verificationGasLimit,
-        userOperation.callGasLimit,
-        userOperation.maxFeePerGas,
-        userOperation.maxPriorityFeePerGas,
-      ];
-
-      gasValues.forEach((value) => {
-        if (value > MAX_UINT120) {
-          throw new Error(`Gas value ${value} exceeds uint120 max`);
-        }
-      });
+        userOperation = {
+          sender: state.smartAccount.address,
+          nonce: BigInt(nonce),
+          factory,
+          factoryData,
+          callData,
+          callGasLimit: 10000n,
+          verificationGasLimit: 20000000n,
+          preVerificationGas: 20000n,
+          maxFeePerGas,
+          maxPriorityFeePerGas,
+          paymaster,
+          paymasterVerificationGasLimit: 200000n,
+          paymasterPostOpGasLimit: 10000n,
+          paymasterData: paymasterData,
+          signature: "0x",
+        } as UserOperation;
+      } else {
+        userOperation = {
+          sender: state.smartAccount.address,
+          nonce: BigInt(nonce),
+          callData,
+          callGasLimit: 10000n,
+          verificationGasLimit: 20000000n,
+          preVerificationGas: 20000n,
+          maxFeePerGas,
+          maxPriorityFeePerGas,
+          paymaster,
+          paymasterVerificationGasLimit: 200000n,
+          paymasterPostOpGasLimit: 10000n,
+          paymasterData: paymasterData,
+          signature: "0x",
+        } as UserOperation;
+      }
 
       //wait 2 seconds before signing the transaction to prevent the webauth failing
       await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -259,27 +264,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         userOperation
       );
 
-      const accountGasLimits = concat([
-        pad(numberToHex(userOperation.verificationGasLimit), { size: 16 }),
-        pad(numberToHex(userOperation.callGasLimit), { size: 16 }),
-      ]);
-      const gasFees = concat([
-        pad(numberToHex(userOperation.maxPriorityFeePerGas), { size: 16 }),
-        pad(numberToHex(userOperation.maxFeePerGas), { size: 16 }),
-      ]);
+      console.log("signature received", signature);
 
-      // Structure the signed operation
-      const formattedUserOp = {
-        sender: userOperation.sender,
-        nonce: userOperation.nonce,
-        initCode: userOperation.initCode,
-        callData: userOperation.callData,
-        accountGasLimits: accountGasLimits,
-        preVerificationGas: userOperation.preVerificationGas,
-        gasFees: gasFees,
-        paymasterAndData: userOperation.paymasterAndData,
-        signature: signature,
-      };
+      userOperation.signature = signature;
+
+      const packedUserOp = toPackedUserOperation(
+        userOperation
+      );
+
+      packedUserOp.signature = signature;
 
       const tempBundlerAccount = privateKeyToAccount(
         "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
@@ -298,7 +291,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         address: state.smartAccount.entryPoint.address,
         abi: state.smartAccount.entryPoint.abi,
         functionName: "handleOps",
-        args: [[formattedUserOp], bundlerAddress],
+        args: [[packedUserOp], bundlerAddress],
       });
 
       // Wait for the transaction to be mined

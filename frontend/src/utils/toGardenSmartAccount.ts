@@ -2,18 +2,22 @@ import { abi } from "@/abi/abi";
 import { factoryAbi } from "@/abi/factoryAbi";
 import type { Address, TypedData } from "abitype";
 import type * as WebAuthnP256 from "ox/WebAuthnP256";
+import * as Signature from 'ox/Signature'
 
 import {
   Assign,
   BaseError,
   Client,
+  concat,
   decodeFunctionData,
+  encodeAbiParameters,
   encodeFunctionData,
   hashMessage,
   hashTypedData,
   Hex,
   LocalAccount,
   Prettify,
+  stringToHex,
   TypedDataDefinition,
 } from "viem";
 import {
@@ -21,6 +25,7 @@ import {
   getUserOperationHash,
   SmartAccount,
   SmartAccountImplementation,
+  toCoinbaseSmartAccount,
   toSmartAccount,
   UserOperation,
   WebAuthnAccount,
@@ -62,6 +67,8 @@ export async function toGardenSmartAccount(
   const { client, owner, sessionKey, nonce = 0n } = parameters;
 
   let address = parameters.address;
+
+  toCoinbaseSmartAccount
 
   const entryPoint = {
     abi: entryPoint07Abi,
@@ -173,10 +180,12 @@ export async function toGardenSmartAccount(
       const { signature, webauthn } = await owner.sign({
         hash: parameters.hash,
       });
-      return encodeSignature({
+      const encodedSignature = encodeSignature({
         isSessionKey: false,
-        signature: encodeWebAuthnSignature({ signature, webauthn }),
+        signature: toWebAuthnSignature({ webauthn, signature }),
       });
+      console.log("encoded signature in sign function :", encodedSignature);
+      return encodedSignature
     },
 
     async signMessage(parameters) {
@@ -201,7 +210,6 @@ export async function toGardenSmartAccount(
 
     async signUserOperation(parameters) {
       const { chainId = client.chain!.id, ...userOperation } = parameters;
-
       const address = await this.getAddress();
       const hash = getUserOperationHash({
         chainId,
@@ -213,7 +221,9 @@ export async function toGardenSmartAccount(
         },
       });
 
-      return await this.sign!({ hash });
+      const signature = await this.sign!({ hash });
+      console.log("signature before returning in signUserOperation function :", signature);
+      return signature
     },
   });
 }
@@ -254,42 +264,51 @@ function encodeWebAuthnPubKey(owner: WebAuthnAccount): Hex {
   });
 }
 
-function encodeWebAuthnSignature({
-  signature,
+/** @internal */
+export function toWebAuthnSignature({
   webauthn,
+  signature,
 }: {
-  signature: Hex;
-  webauthn: WebAuthnP256.SignMetadata;
-}): Hex {
-  return encodeFunctionData({
-    abi: [
+  webauthn: WebAuthnP256.SignMetadata
+  signature: Hex
+}) {
+  const { r, s } = Signature.fromHex(signature)
+  return encodeAbiParameters(
+    [
       {
-        inputs: [
+        components: [
           {
-            components: [
-              { name: "authenticatorData", type: "bytes" },
-              { name: "clientDataJSON", type: "string" },
-              { name: "signature", type: "bytes" },
-            ],
-            name: "auth",
-            type: "tuple",
+            name: 'authenticatorData',
+            type: 'bytes',
+          },
+          { name: 'clientDataJSON', type: 'bytes' },
+          { name: 'challengeIndex', type: 'uint256' },
+          { name: 'typeIndex', type: 'uint256' },
+          {
+            name: 'r',
+            type: 'uint256',
+          },
+          {
+            name: 's',
+            type: 'uint256',
           },
         ],
-        name: "encode",
-        outputs: [{ name: "", type: "bytes" }],
-        type: "function",
+        type: 'tuple',
       },
     ],
-    functionName: "encode",
-    args: [
+    [
       {
         authenticatorData: webauthn.authenticatorData,
-        clientDataJSON: webauthn.clientDataJSON,
-        signature,
+        clientDataJSON: stringToHex(webauthn.clientDataJSON),
+        challengeIndex: BigInt(webauthn.challengeIndex),
+        typeIndex: BigInt(webauthn.typeIndex),
+        r,
+        s,
       },
     ],
-  });
+  )
 }
+
 
 function encodeSignature({
   isSessionKey,
@@ -298,19 +317,10 @@ function encodeSignature({
   isSessionKey: boolean;
   signature: Hex;
 }): Hex {
-  return encodeFunctionData({
-    abi: [
-      {
-        inputs: [
-          { name: "isSessionKey", type: "bool" },
-          { name: "signature", type: "bytes" },
-        ],
-        name: "encode",
-        outputs: [{ name: "", type: "bytes" }],
-        type: "function",
-      },
-    ],
-    functionName: "encode",
-    args: [isSessionKey, signature],
-  });
+  const encodedSignature =  concat([
+    isSessionKey ? '0x01' : '0x00',
+    signature,
+  ])
+  console.log("encoded signature", encodedSignature)
+  return encodedSignature
 }
