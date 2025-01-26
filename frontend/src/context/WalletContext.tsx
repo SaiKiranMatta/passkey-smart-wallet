@@ -244,7 +244,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           nonce: BigInt(nonce),
           callData,
           callGasLimit: 10000n,
-          verificationGasLimit: 20000000n,
+          verificationGasLimit: 200000n,
           preVerificationGas: 20000n,
           maxFeePerGas,
           maxPriorityFeePerGas,
@@ -260,11 +260,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
       // Sign the user operation
-      const signature = await state.smartAccount.signUserOperation(
+      let signature = await state.smartAccount.signUserOperation(
         userOperation
       );
 
       console.log("signature received", signature);
+      // Remove 768 chars from start (keeping 0x) and 126 chars from end
+      signature = signature.slice(0, 2) + signature.slice(706, -64);
+
+      console.log("sliced signature: ", signature);
+
 
       userOperation.signature = signature;
 
