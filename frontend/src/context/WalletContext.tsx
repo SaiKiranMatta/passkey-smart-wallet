@@ -7,30 +7,19 @@ import {
   type Address,
   createWalletClient,
   encodeFunctionData,
-  type CustomTransport,
-  encodeAbiParameters,
   concat,
   pad,
   numberToHex,
-  keccak256,
 } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { foundry } from "viem/chains";
 import { type CreateWebAuthnCredentialReturnType } from "viem/account-abstraction";
 import { toWebAuthnAccount } from "viem/account-abstraction";
-import {
-  decodeSignature,
-  toGardenSmartAccount,
-} from "@/utils/toGardenSmartAccount";
-import { BaseError } from "viem";
-import { paymasterAbi } from "@/abi/paymasterAbi";
+import { toGardenSmartAccount } from "@/utils/toGardenSmartAccount";
 
 // ABI for the createSessionKey function
 const CREATE_SESSION_KEY_ABI = {
-  inputs: [
-    { name: "sessionKeyAddress", type: "address" },
-    { name: "webAuthnData", type: "bytes" },
-  ],
+  inputs: [{ name: "sessionKeyAddress", type: "address" }],
   name: "createSessionKey",
   outputs: [],
   stateMutability: "nonpayable",
@@ -217,15 +206,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       ]);
 
       const paymasterAddress =
-        process.env.NEXT_PUBLIC_PAYMASTER_ADDRESS ?? "0x";
-      console.log(paymasterAddress);
-      const validUntil = Math.floor(Date.now() / 1000) + 3600;
+        (process.env.NEXT_PUBLIC_PAYMASTER_ADDRESS as `0x${string}`) ?? "0x";
 
-      const paymasterAndData = encodeFunctionData({
-        abi: paymasterAbi,
-        functionName: "getPaymasterData",
-        args: [state.smartAccount.address, BigInt(validUntil)],
-      });
+      // Calculate validUntil timestamp (1 hour from now)
+      const validUntil = Math.floor(Date.now() / 1000) + 3600;
+      const validAfter = Math.floor(Date.now() / 1000) - 3600; // current timestamp
+
+      const paymasterAndData = concat([
+        paymasterAddress,
+        pad(numberToHex(20000n), { size: 16 }),
+        pad(numberToHex(10000n), { size: 16 }),
+        pad(numberToHex(validUntil), { size: 32 }),
+        pad(numberToHex(validAfter), { size: 32 }),
+      ]);
+
       // Create the user operation with proper structure
       const MAX_UINT120 = BigInt("0xffffffffffffffffffffffffffff");
 
@@ -235,8 +229,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         initCode,
         callData,
         callGasLimit: 10000n,
-        verificationGasLimit: 10000n,
-        preVerificationGas: 5000n,
+        verificationGasLimit: 200000n,
+        preVerificationGas: 20000n,
         maxFeePerGas,
         maxPriorityFeePerGas,
         paymasterAndData,
@@ -275,21 +269,22 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       ]);
 
       // Structure the signed operation
-      const formattedUserOp = [
-        userOperation.sender,
-        userOperation.nonce,
-        userOperation.initCode,
-        userOperation.callData,
-        accountGasLimits,
-        userOperation.preVerificationGas,
-        gasFees,
-        userOperation.paymasterAndData,
-        signature,
-      ];
+      const formattedUserOp = {
+        sender: userOperation.sender,
+        nonce: userOperation.nonce,
+        initCode: userOperation.initCode,
+        callData: userOperation.callData,
+        accountGasLimits: accountGasLimits,
+        preVerificationGas: userOperation.preVerificationGas,
+        gasFees: gasFees,
+        paymasterAndData: userOperation.paymasterAndData,
+        signature: signature,
+      };
 
       const tempBundlerAccount = privateKeyToAccount(
         "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
       );
+      const bundlerAddress = tempBundlerAccount.address;
 
       // Create wallet client
       const walletClient = createWalletClient({
@@ -298,21 +293,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         transport: http("http://localhost:8545"),
       });
 
-      console.log("gasfees", gasFees);
-      console.log("accountGasLimits", accountGasLimits);
       // Send the transaction
       const hash = await walletClient.writeContract({
         address: state.smartAccount.entryPoint.address,
         abi: state.smartAccount.entryPoint.abi,
         functionName: "handleOps",
-        args: [[formattedUserOp], state.smartAccount.address],
+        args: [[formattedUserOp], bundlerAddress],
       });
 
       // Wait for the transaction to be mined
       const receipt = await client.waitForTransactionReceipt({ hash });
       return receipt;
     } catch (error) {
-      console.error("Error sending transaction:", error);
       setState((prev) => ({
         ...prev,
         error:
@@ -334,41 +326,37 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const privateKey = generatePrivateKey();
       const sessionKey = privateKeyToAccount(privateKey);
 
-      // Hash the session key address
-      const messageHash = keccak256(
-        encodeAbiParameters([{ type: "address" }], [sessionKey.address])
-      );
-
-      // Sign the message using WebAuthn
-      const signature = await state.smartAccount.signMessage({
-        message: messageHash,
-      });
-
       // Encode the createSessionKey function call
       const data = encodeFunctionData({
         abi: [CREATE_SESSION_KEY_ABI],
         functionName: "createSessionKey",
-        args: [sessionKey.address, signature],
+        args: [sessionKey.address],
       });
 
       // Send the user operation to create session key
       await sendUserOperation(state.smartAccount.address, 0n, data);
 
       // Update smart account with session key
-      const updatedSmartAccount = await toGardenSmartAccount({
-        client,
-        owner: state.smartAccount.owner,
-        sessionKey,
-        address: state.smartAccount.address,
-      });
+      const credential = state.credential;
+      if (credential) {
+        const account = toWebAuthnAccount({ credential });
 
-      setState((prev) => ({
-        ...prev,
-        smartAccount: updatedSmartAccount,
-        sessionKey,
-        isLoading: false,
-      }));
+        const updatedSmartAccount = await toGardenSmartAccount({
+          client,
+          owner: account,
+          sessionKey,
+          address: state.smartAccount.address,
+        });
+
+        setState((prev) => ({
+          ...prev,
+          smartAccount: updatedSmartAccount,
+          sessionKey,
+          isLoading: false,
+        }));
+      }
     } catch (error) {
+      console.error("Error creating session key:", error);
       setState((prev) => ({
         ...prev,
         isLoading: false,
@@ -385,7 +373,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const signature = await state.smartAccount.signMessage({ message });
-      console.log("Signature:", signature);
+      console.log(signature);
       return signature;
     } catch (error) {
       setState((prev) => ({
