@@ -114,8 +114,8 @@ contract SmartAccount is IAccount, UUPSUpgradeable, Initializable {
         bytes32 userOpHash,
         uint256 missingAccountFunds
     ) external requireFromEntryPoint returns (uint256 validationData) {
-        validationData = _validateSignature(userOp, userOpHash);
-        // _payPrefund(missingAccountFunds);
+        validationData = _validateSignature(userOp.signature, userOpHash);
+        _payPrefund(missingAccountFunds);
         //  validationData = 0;
     }
 
@@ -123,11 +123,11 @@ contract SmartAccount is IAccount, UUPSUpgradeable, Initializable {
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
     function _validateSignature(
-        PackedUserOperation calldata userOp,
+        bytes calldata encodedSignature,
         bytes32 userOpHash
     ) internal view returns (uint256 validationData) {
-        (bool isSessionKey, bytes memory signature) = abi.decode(userOp.signature, (bool, bytes));
-        
+        (bool isSessionKey, bytes memory signature) = abi.decode(encodedSignature, (bool, bytes));
+         
         if (isSessionKey) {
             // For session keys, recover address from ECDSA signature and verify validity
             bytes32 hash = MessageHashUtils.toEthSignedMessageHash(userOpHash);
