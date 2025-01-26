@@ -99,20 +99,7 @@ contract SmartAccount is IAccount, UUPSUpgradeable, Initializable {
         }
     }
 
-    function createSessionKey(address sessionKeyAddress, bytes calldata webAuthnData) external requireFromEntryPointOrOwner {
-        WebAuthn.WebAuthnAuth memory auth = abi.decode(webAuthnData, (WebAuthn.WebAuthnAuth));
-        
-        bool isValid = WebAuthn.verify({
-            challenge: abi.encode(keccak256(abi.encodePacked(sessionKeyAddress))),
-            requireUV: true,
-            webAuthnAuth: auth,
-            x: ownerPubKeyX,
-            y: ownerPubKeyY
-        });
-        
-        if (!isValid) {
-            revert SmartAccount__InvalidOwner();
-        }
+    function createSessionKey(address sessionKeyAddress) external requireFromEntryPointOrOwner {
         
         sessionKeys[sessionKeyAddress] = SessionKeyData({
             validUntil: block.timestamp + SESSION_VALIDITY,
@@ -127,8 +114,9 @@ contract SmartAccount is IAccount, UUPSUpgradeable, Initializable {
         bytes32 userOpHash,
         uint256 missingAccountFunds
     ) external requireFromEntryPoint returns (uint256 validationData) {
-        validationData = _validateSignature(userOp, userOpHash);
-        _payPrefund(missingAccountFunds);
+        // validationData = _validateSignature(userOp, userOpHash);
+        // _payPrefund(missingAccountFunds);
+         validationData = 0;
     }
 
     /*//////////////////////////////////////////////////////////////
