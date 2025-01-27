@@ -316,6 +316,6 @@ function encodeSignature({
     [isSessionKey, signature]
   );
 
-  console.log("encodedSignature", encodeSignature);
+  console.log("encodedSignature", encodedSignature);
   return encodedSignature;
 }
