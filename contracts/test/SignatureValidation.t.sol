@@ -5,7 +5,7 @@ import {Test, console2} from "forge-std/Test.sol";
 import "lib/webauthn-sol/src/WebAuthn.sol";
 
 contract WebAuthnSignatureTest is Test {
-    function test_WebAuthnSignatureVerification() public {
+    function test_WebAuthnSignatureVerification() public view {
         // Hardcoded UserOp Hash
         bytes32 userOpHash = 0xf5a4273bfa0e8bce5ddc0714765f0b2c04231e7ae9e3cba4c502467fa9fac1d0;
 

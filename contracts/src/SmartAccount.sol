@@ -62,7 +62,12 @@ contract SmartAccount is IAccount, UUPSUpgradeable, Initializable {
         }
         _;
     }
-
+    modifier onlyOwner() {
+        if (!_isOwner(msg.sender)) {
+            revert SmartAccount__InvalidOwner();
+        }
+        _;
+    }
     /*//////////////////////////////////////////////////////////////
                                FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -99,7 +104,7 @@ contract SmartAccount is IAccount, UUPSUpgradeable, Initializable {
         }
     }
 
-    function createSessionKey(address sessionKeyAddress) external requireFromEntryPointOrOwner {
+    function createSessionKey(address sessionKeyAddress) external onlyOwner {
         
         sessionKeys[sessionKeyAddress] = SessionKeyData({
             validUntil: block.timestamp + SESSION_VALIDITY,
