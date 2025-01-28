@@ -8,9 +8,8 @@ import (
 
 type Credential struct {
 	gorm.Model
-	Email          string          `json:"email" gorm:"uniqueIndex"`
-	CredentialRaw  json.RawMessage `json:"credential"`
-	AccountAddress string          `json:"accountAddress"`
+	Email         string          `json:"email" gorm:"uniqueIndex"`
+	CredentialRaw json.RawMessage `json:"credential"`
 }
 
 type UserOperation struct {

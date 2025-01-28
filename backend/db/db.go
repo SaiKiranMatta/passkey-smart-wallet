@@ -16,10 +16,10 @@ func Initialize(cfg config.DatabaseConfig) (*gorm.DB, error) {
 	}
 
 	// Auto-migrate schemas
-	// err = db.AutoMigrate(&Credential{})
-	// if err != nil {
-	// 	return nil, err
-	// }
+	err = db.AutoMigrate(&Credential{})
+	if err != nil {
+		return nil, err
+	}
 
 	return db, nil
 }
