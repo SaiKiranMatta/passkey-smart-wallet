@@ -13,11 +13,7 @@ type Config struct {
 }
 
 type DatabaseConfig struct {
-	Host     string
-	User     string
-	Password string
-	DBName   string
-	Port     string
+	URL string
 }
 
 type ServerConfig struct {
@@ -41,11 +37,7 @@ func Load() (*Config, error) {
 
 	return &Config{
 		Database: DatabaseConfig{
-			Host:     getEnvOrDefault("DB_HOST", "localhost"),
-			User:     getEnvOrDefault("DB_USER", "postgres"),
-			Password: getEnvOrDefault("DB_PASSWORD", "postgres"),
-			DBName:   getEnvOrDefault("DB_NAME", "wallet_db"),
-			Port:     getEnvOrDefault("DB_PORT", "5432"),
+			URL: getEnvOrDefault("DB_URL", "postgres://postgres:postgres@localhost:5432/wallet_db"),
 		},
 		Server: ServerConfig{
 			Port:         getEnvOrDefault("SERVER_PORT", "7930"),

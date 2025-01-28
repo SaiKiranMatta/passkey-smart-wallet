@@ -1,7 +1,6 @@
 package db
 
 import (
-	"fmt"
 	"wallet-backend/config"
 
 	"gorm.io/driver/postgres"
@@ -9,8 +8,7 @@ import (
 )
 
 func Initialize(cfg config.DatabaseConfig) (*gorm.DB, error) {
-	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
-		cfg.Host, cfg.User, cfg.Password, cfg.DBName, cfg.Port)
+	dsn := cfg.URL
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
