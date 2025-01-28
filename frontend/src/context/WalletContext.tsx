@@ -20,6 +20,7 @@ import {
 } from "viem/account-abstraction";
 import { toWebAuthnAccount } from "viem/account-abstraction";
 import { toGardenSmartAccount } from "@/utils/toGardenSmartAccount";
+import { toSerializablePackedUserOp } from "@/utils/conversions";
 
 // ABI for the createSessionKey function
 const CREATE_SESSION_KEY_ABI = {
@@ -29,6 +30,8 @@ const CREATE_SESSION_KEY_ABI = {
   stateMutability: "nonpayable",
   type: "function",
 } as const;
+
+const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL as string;
 
 interface WalletContextType {
   smartAccount: any;
@@ -278,29 +281,25 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       );
 
       packedUserOp.signature = signature;
+      const serializableUserOp = toSerializablePackedUserOp(packedUserOp);
 
-      const tempBundlerAccount = privateKeyToAccount(
-        "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
-      );
-      const bundlerAddress = tempBundlerAccount.address;
-
-      // Create wallet client
-      const walletClient = createWalletClient({
-        account: tempBundlerAccount,
-        chain: foundry,
-        transport: http("http://localhost:8545"),
+      const response = await fetch(`${backendUrl}/send-transaction`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(serializableUserOp),
       });
 
-      // Send the transaction
-      const hash = await walletClient.writeContract({
-        address: state.smartAccount.entryPoint.address,
-        abi: state.smartAccount.entryPoint.abi,
-        functionName: "handleOps",
-        args: [[packedUserOp], bundlerAddress],
-      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to send transaction');
+      }
+
+      const { txHash } = await response.json();
 
       // Wait for the transaction to be mined
-      const receipt = await client.waitForTransactionReceipt({ hash });
+      const receipt = await client.waitForTransactionReceipt({ hash: txHash as `0x${string}` });
       return receipt;
     } catch (error) {
       setState((prev) => ({
