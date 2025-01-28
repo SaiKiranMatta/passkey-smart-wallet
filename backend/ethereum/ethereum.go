@@ -2,13 +2,23 @@ package ethereum
 
 import (
 	"crypto/ecdsa"
+	"fmt"
+	"math/big"
+	"strconv"
 	"wallet-backend/config"
 	"wallet-backend/db"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
+
+func BytesToBytes32(b []byte) [32]byte {
+	var result [32]byte
+	copy(result[:], b)
+	return result
+}
 
 type EthereumService struct {
 	client     *ethclient.Client
@@ -46,11 +56,45 @@ func (s *EthereumService) EstimateGas(userOp db.UserOperation) (map[string]strin
 }
 
 func (s *EthereumService) SendUserOperation(userOp db.PackedUserOp) (string, error) {
-	// TODO: Implement actual transaction sending logic
-	// This would involve:
-	// 1. Converting the UserOperation to the appropriate format
-	// 2. Calling handleOps on the EntryPoint contract
-	// 3. Returning the transaction hash
+	chainID, err := strconv.ParseInt(s.config.Chain.ChainId, 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse chain ID: %w", err)
+	}
+	auth, err := bind.NewKeyedTransactorWithChainID(s.bundlerKey, big.NewInt(chainID))
+	if err != nil {
+		return "", fmt.Errorf("failed to create auth: %w", err)
+	}
 
-	return "0x...", nil
+	// Create EntryPoint contract instance
+	entryPoint, err := NewEntrypoint(s.entryPoint, s.client)
+	if err != nil {
+		return "", fmt.Errorf("failed to create entryPoint instance: %w", err)
+	}
+
+	contractUserOp := PackedUserOperation{
+		Sender:             common.HexToAddress(userOp.Sender),
+		Nonce:              new(big.Int).SetBytes(common.FromHex(userOp.Nonce)),
+		InitCode:           common.FromHex(userOp.InitCode),
+		CallData:           common.FromHex(userOp.CallData),
+		AccountGasLimits:   BytesToBytes32(common.FromHex(userOp.AccountGasLimits)),
+		GasFees:            BytesToBytes32(common.FromHex(userOp.GasFees)),
+		PreVerificationGas: new(big.Int).SetBytes(common.FromHex(userOp.PreVerificationGas)),
+		PaymasterAndData:   common.FromHex(userOp.PaymasterAndData),
+		Signature:          common.FromHex(userOp.Signature),
+	}
+
+	// Get bundler address from private key
+	bundlerAddress := crypto.PubkeyToAddress(s.bundlerKey.PublicKey)
+
+	// Send the transaction
+	tx, err := entryPoint.HandleOps(
+		auth,
+		[]PackedUserOperation{contractUserOp},
+		bundlerAddress,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to send transaction: %w", err)
+	}
+
+	return tx.Hash().Hex(), nil
 }
