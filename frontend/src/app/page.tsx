@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useWallet } from "@/context/WalletContext";
 import { login, registerNewAccount } from "@/utils/auth";
+import TransactionForm from "@/components/TransactionForm";
 
 export default function WebAuthnWallet() {
   const {
@@ -24,7 +25,6 @@ export default function WebAuthnWallet() {
   const handleLogin = async () => {
     try {
       await login(email, initializeWallet);
-      console.log(accountAddress);
     } catch (error) {
       console.error(error);
     }
@@ -38,7 +38,7 @@ export default function WebAuthnWallet() {
       console.error(error);
     }
   };
-  
+
   return (
     <div className="p-6 mx-auto bg-white rounded-xl shadow-md flex flex-col items-center justify-center min-h-screen">
       {error && (
@@ -87,9 +87,13 @@ export default function WebAuthnWallet() {
           </button>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className=" flex-col space-y-4 w-full max-w-md">
+          <TransactionForm />
+          <div className="bg-gray-200 w-full my-8 h-[0.1px]"></div>
           <div className="break-all">
-            <h3 className="text-sm font-semibold">Wallet Address:</h3>
+            <h3 className="text-sm font-semibold text-gray-700">
+              Wallet Address:
+            </h3>
             <p className="text-gray-600">{accountAddress}</p>
           </div>
 
@@ -97,7 +101,7 @@ export default function WebAuthnWallet() {
             <button
               onClick={createSessionKey}
               className="w-full bg-blue-500 text-white py-2 px-4 rounded-xl hover:bg-blue-600 disabled:bg-blue-300"
-              >
+            >
               Create Session Key
             </button>
           )}

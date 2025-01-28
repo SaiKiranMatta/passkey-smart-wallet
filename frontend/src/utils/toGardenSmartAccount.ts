@@ -315,7 +315,7 @@ function encodeSignature({
     ],
     [isSessionKey, signature]
   );
-
+  console.log("isSessionKey", isSessionKey);
   console.log("encodedSignature", encodedSignature);
   return encodedSignature;
 }
