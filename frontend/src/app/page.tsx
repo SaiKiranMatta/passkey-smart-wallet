@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { createWebAuthnCredential } from "viem/account-abstraction";
 import { useWallet } from "@/context/WalletContext";
+import { login, registerNewAccount } from "@/utils/auth";
 
 export default function WebAuthnWallet() {
   const {
@@ -14,56 +14,35 @@ export default function WebAuthnWallet() {
     initializeWallet,
     createSessionKey,
     signMessage,
-    logout
+    logout,
   } = useWallet();
 
   const [isLoginMode, setIsLoginMode] = useState(false);
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
 
-  const registerNewAccount = async () => {
-    if (!email || !username) {
-      return;
-    }
-
+  const handleLogin = async () => {
     try {
-      const credential = await createWebAuthnCredential({
-        name: username,
-      });
-
-      await initializeWallet(email, credential);
+      await login(email, initializeWallet);
+      console.log(accountAddress);
     } catch (error) {
-      console.error("Registration failed:", error);
+      console.error(error);
     }
   };
 
-  const login = async () => {
-    if (!email) return;
-
+  const handleRegister = async () => {
     try {
-      const storedCredentials = JSON.parse(
-        localStorage.getItem("stored_credentials") || "[]"
-      );
-      const storedCredential = storedCredentials.find(
-        (c: any) => c.email === email
-      );
-
-      if (!storedCredential) {
-        throw new Error("No account found for this email");
-      }
-
-      await initializeWallet(email, storedCredential.credential);
+      await registerNewAccount(email, username, initializeWallet);
+      console.log(accountAddress);
     } catch (error) {
-      console.error("Login failed:", error);
+      console.error(error);
     }
   };
-
+  
   return (
     <div className="p-6 mx-auto bg-white rounded-xl shadow-md flex flex-col items-center justify-center min-h-screen">
       {error && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
-          {error}
-        </div>
+        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">{error}</div>
       )}
 
       {!credential ? (
@@ -96,7 +75,7 @@ export default function WebAuthnWallet() {
           )}
 
           <button
-            onClick={isLoginMode ? login : registerNewAccount}
+            onClick={isLoginMode ? handleLogin : handleRegister}
             disabled={isLoading}
             className="w-full bg-blue-500 text-white py-2 px-4 rounded-xl hover:bg-blue-600 disabled:bg-blue-300"
           >

@@ -5,7 +5,6 @@ import {
   createPublicClient,
   http,
   type Address,
-  createWalletClient,
   encodeFunctionData,
   concat,
   pad,
@@ -54,42 +53,6 @@ interface WalletContextType {
   logout: () => void;
 }
 
-interface StoredCredential {
-  email: string;
-  credential: CreateWebAuthnCredentialReturnType;
-  accountAddress: string;
-}
-
-const storeCredential = (
-  email: string,
-  credential: CreateWebAuthnCredentialReturnType,
-  accountAddress: string
-) => {
-  // Store in local storage for persistence
-  const storedCredentials = JSON.parse(
-    localStorage.getItem("stored_credentials") || "[]"
-  );
-  const newCredential: StoredCredential = {
-    email,
-    credential,
-    accountAddress,
-  };
-  // Check if email already exists and update if it does
-  const existingIndex = storedCredentials.findIndex(
-    (c: StoredCredential) => c.email === email
-  );
-  if (existingIndex >= 0) {
-    storedCredentials[existingIndex] = newCredential;
-  } else {
-    storedCredentials.push(newCredential);
-  }
-  localStorage.setItem("stored_credentials", JSON.stringify(storedCredentials));
-  // Store current session
-  localStorage.setItem(
-    "current_session",
-    JSON.stringify({ credential, accountAddress })
-  );
-};
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
@@ -111,17 +74,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     sessionKey: null,
   });
 
-  const bundlerTransport = http("http://localhost:4337");
-  const customBundlerTransport = http("http://localhost:4337", {
-    retryCount: 3,
-    timeout: 30000,
-  });
-
-  const bundlerClient = createPublicClient({
-    chain: foundry,
-    transport: customBundlerTransport,
-  });
-
+  //For gas estimation
   const client = createPublicClient({
     chain: foundry,
     transport: http("http://localhost:8545"),
@@ -159,8 +112,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           accountAddress: smartAccount.address,
         })
       );
-
-      storeCredential(email, credential, smartAccount.address);
     } catch (error) {
       setState((prev) => ({
         ...prev,
