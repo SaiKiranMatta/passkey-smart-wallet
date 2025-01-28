@@ -96,22 +96,22 @@ export default function WebAuthnWallet() {
           {!sessionKey && (
             <button
               onClick={createSessionKey}
-              className="w-full bg-green-500 text-white py-2 px-4 rounded hover:bg-green-600"
-            >
+              className="w-full bg-blue-500 text-white py-2 px-4 rounded-xl hover:bg-blue-600 disabled:bg-blue-300"
+              >
               Create Session Key
             </button>
           )}
 
           <button
             onClick={() => signMessage("Hello World")}
-            className="w-full bg-green-500 text-white py-2 px-4 rounded hover:bg-green-600"
+            className="w-full bg-blue-500 text-white py-2 px-4 rounded-xl hover:bg-blue-600 disabled:bg-blue-300"
           >
             Sign Test Message
           </button>
 
           <button
             onClick={logout}
-            className="w-full bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600"
+            className="w-full border border-blue-500 text-blue-500 py-2 px-4 rounded-xl hover:bg-slate-100 disabled:bg-blue-300"
           >
             Logout
           </button>
