@@ -29,3 +29,15 @@ type UserOperation struct {
 	PaymasterData                 string `json:"paymasterData"`
 	Signature                     string `json:"signature"`
 }
+
+type PackedUserOp struct {
+	Sender             string `json:"sender"`
+	Nonce              string `json:"nonce"`
+	InitCode           string `json:"initCode"`
+	CallData           string `json:"callData"`
+	AccountGasLimits   string `json:"accountGasLimits"`
+	GasFees            string `json:"gasFees"`
+	PaymasterAndData   string `json:"paymasterAndData"`
+	PreVerificationGas string `json:"preVerificationGas"`
+	Signature          string `json:"signature"`
+}

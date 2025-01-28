@@ -45,7 +45,7 @@ func (s *EthereumService) EstimateGas(userOp db.UserOperation) (map[string]strin
 	}, nil
 }
 
-func (s *EthereumService) SendUserOperation(userOp db.UserOperation) (string, error) {
+func (s *EthereumService) SendUserOperation(userOp db.PackedUserOp) (string, error) {
 	// TODO: Implement actual transaction sending logic
 	// This would involve:
 	// 1. Converting the UserOperation to the appropriate format

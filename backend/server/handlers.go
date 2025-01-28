@@ -78,13 +78,13 @@ func (h *Handler) EstimateGas(c *gin.Context) {
 }
 
 func (h *Handler) SendTransaction(c *gin.Context) {
-	var userOp db.UserOperation
-	if err := c.BindJSON(&userOp); err != nil {
+	var packedUserOp db.PackedUserOp
+	if err := c.BindJSON(&packedUserOp); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	txHash, err := h.ethServ.SendUserOperation(userOp)
+	txHash, err := h.ethServ.SendUserOperation(packedUserOp)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
