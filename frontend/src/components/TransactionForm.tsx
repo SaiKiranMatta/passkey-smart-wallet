@@ -1,89 +1,99 @@
+"use client";
+
 import React, { useState } from 'react';
 import { useWallet } from "@/context/WalletContext";
 import { isAddress } from 'viem';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 
 const TransactionForm = () => {
-  const { sendUserOperation, isLoading, error } = useWallet();
+  const { sendUserOperation, isLoading, sessionKey } = useWallet();
   const [recipientAddress, setRecipientAddress] = useState('');
   const [amount, setAmount] = useState('');
-  const [txError, setTxError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setTxError('');
 
-    // Validate address
     if (!isAddress(recipientAddress)) {
-      setTxError('Invalid Ethereum address');
+      toast.error("Please enter a valid Ethereum address");
       return;
     }
 
-    // Validate amount
     if (!amount || parseFloat(amount) <= 0) {
-      setTxError('Invalid amount');
+      toast.error("Please enter a valid amount");
       return;
     }
 
     try {
+      if (sessionKey) {
+        toast.info("Signing transaction with session key...");
+      }
+
       // Convert ETH to Wei (1 ETH = 10^18 Wei)
       const valueInWei = BigInt(parseFloat(amount) * 1e18);
       
-      await sendUserOperation(recipientAddress as `0x${string}`, valueInWei);
+      const receipt = await sendUserOperation(recipientAddress as `0x${string}`, valueInWei);
       
-      // Clear form on success
+      toast.success("Transaction sent successfully!", {
+        description: "Your transfer has been confirmed"
+      });
+      
       setRecipientAddress('');
       setAmount('');
     } catch (err) {
-      setTxError(err instanceof Error ? err.message : 'Transaction failed');
+      toast.error("Transaction failed", {
+        description: "Please try again later"
+      });
     }
   };
 
   return (
-    <div className="w-full max-w-md mx-auto text-gray-800 ">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label htmlFor="address" className="block text-sm font-medium text-gray-700 mb-1">
-            Recipient Address
-          </label>
-          <input
-            id="address"
-            type="text"
-            value={recipientAddress}
-            onChange={(e) => setRecipientAddress(e.target.value)}
-            placeholder="0x..."
-            className="w-full rounded-xl py-2 pl-3 text-sm pr-10 border focus:outline-none focus:ring-2 focus:ring-[#D7E96D]"
-          />
-        </div>
-
-        <div>
-          <label htmlFor="amount" className="block text-sm font-medium text-gray-700 mb-1">
-            Amount (ETH)
-          </label>
-          <input
-            id="amount"
-            type="number"
-            step="0.000000000000000001"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="0.0"
-            className="w-full rounded-xl py-2 pl-3 text-sm pr-10 border focus:outline-none focus:ring-2 focus:ring-[#D7E96D]"
-          />
-        </div>
-
-        {(txError || error) && (
-          <div className="text-red-500 text-sm">
-            {txError || error}
+    <div className="flex items-center justify-center min-h-[calc(100vh-4rem)]">
+      <Card className=" w-[32rem] mx-auto">
+      <CardHeader>
+        <CardTitle>Send Transaction</CardTitle>
+        <CardDescription>
+          Send ETH to any Ethereum address
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="address">Recipient Address</Label>
+            <Input
+              id="address"
+              type="text"
+              value={recipientAddress}
+              onChange={(e) => setRecipientAddress(e.target.value)}
+              placeholder="0x..."
+            />
           </div>
-        )}
 
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="w-full bg-blue-500 text-white py-2 px-4 rounded-xl hover:bg-blue-600 disabled:bg-blue-300"
+          <div className="space-y-2">
+            <Label htmlFor="amount">Amount (ETH)</Label>
+            <Input
+              id="amount"
+              type="number"
+              step="0.000000000000000001"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0.0"
+            />
+          </div>
+
+          <Button 
+            type="submit" 
+            className="w-full"
+            disabled={isLoading}
           >
-          {isLoading ? "Sending..." : "Send Transaction"}
-        </button>
-      </form>
+            {isLoading ? "Sending..." : "Send Transaction"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
     </div>
   );
 };
