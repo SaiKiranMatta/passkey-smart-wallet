@@ -20,6 +20,7 @@ import {
 import { toWebAuthnAccount } from "viem/account-abstraction";
 import { toGardenSmartAccount } from "@/utils/toGardenSmartAccount";
 import { toSerializablePackedUserOp } from "@/utils/conversions";
+import { encryptedStorage } from "@/utils/encryptedStorage";
 
 // ABI for the createSessionKey function
 const CREATE_SESSION_KEY_ABI = {
@@ -296,6 +297,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           address: state.smartAccount.address,
         });
 
+        await encryptedStorage.store(`sessionKey_${state.accountAddress}`, {
+          address: sessionKey.address,
+          privateKey: privateKey
+        });
+
         setState((prev) => ({
           ...prev,
           smartAccount: updatedSmartAccount,
@@ -330,6 +336,52 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }));
     }
   };
+
+  useEffect(() => {
+    const initializeFromStorage = async () => {
+      const currentSession = localStorage.getItem("current_session");
+      if (currentSession) {
+        const { email, credential, accountAddress } = JSON.parse(currentSession);
+        
+        try {
+          // Try to retrieve session key from encrypted storage
+          const storedSessionKey = await encryptedStorage.retrieve(`sessionKey_${accountAddress}`);
+          
+          const account = toWebAuthnAccount({ credential });
+          
+          // Recreate session key account if it exists
+          const sessionKey = storedSessionKey 
+            ? privateKeyToAccount(storedSessionKey.privateKey as `0x${string}`)
+            : undefined;
+
+          const smartAccount = await toGardenSmartAccount({
+            client,
+            owner: account,
+            sessionKey,
+            address: accountAddress,
+          });
+
+          setState((prev) => ({
+            ...prev,
+            smartAccount,
+            credential,
+            accountAddress: smartAccount.address,
+            sessionKey,
+            isLoading: false,
+          }));
+        } catch (error) {
+          console.error("Error initializing wallet:", error);
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error: error instanceof Error ? error.message : "Wallet initialization failed",
+          }));
+        }
+      }
+    };
+
+    initializeFromStorage();
+  }, []);
 
   const logout = () => {
     localStorage.removeItem("current_session");
