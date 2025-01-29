@@ -13,7 +13,7 @@ import "lib/webauthn-sol/src/WebAuthn.sol";
 
 contract SmartAccount is IAccount, UUPSUpgradeable, Initializable {
     using ECDSA for bytes32;
-    
+
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -30,6 +30,7 @@ contract SmartAccount is IAccount, UUPSUpgradeable, Initializable {
     //////////////////////////////////////////////////////////////*/
     IEntryPoint private immutable i_entryPoint;
 
+    address public owner;
     // Owner's WebAuthn public key components
     uint256 public ownerPubKeyX;
     uint256 public ownerPubKeyY;
@@ -62,12 +63,12 @@ contract SmartAccount is IAccount, UUPSUpgradeable, Initializable {
         }
         _;
     }
-    modifier onlyOwner() {
-        if (!_isOwner(msg.sender)) {
-            revert SmartAccount__InvalidOwner();
-        }
+    
+     modifier requireFromOwner() {
+        _onlyOwner();
         _;
     }
+
     /*//////////////////////////////////////////////////////////////
                                FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -78,10 +79,12 @@ contract SmartAccount is IAccount, UUPSUpgradeable, Initializable {
 
     function initialize(
         uint256 _ownerPubKeyX,
-        uint256 _ownerPubKeyY
+        uint256 _ownerPubKeyY,
+        address _ownerAddress
     ) public initializer {
         ownerPubKeyX = _ownerPubKeyX;
         ownerPubKeyY = _ownerPubKeyY;
+        owner = _ownerAddress;
         emit Initialized(_ownerPubKeyX, _ownerPubKeyY);
     }
 
@@ -94,24 +97,21 @@ contract SmartAccount is IAccount, UUPSUpgradeable, Initializable {
     function execute(
         address dest,
         uint256 value,
-        bytes calldata functionData
+        bytes calldata func
     ) external requireFromEntryPointOrOwner {
-        (bool success, bytes memory result) = dest.call{value: value}(
-            functionData
-        );
-        if (!success) {
-            revert SmartAccount__CallFailed(result);
-        }
+        _call(dest, value, func);
     }
 
-    function createSessionKey(address sessionKeyAddress) external onlyOwner {
-        
+    function createSessionKey(address sessionKeyAddress) external requireFromOwner {
         sessionKeys[sessionKeyAddress] = SessionKeyData({
             validUntil: block.timestamp + SESSION_VALIDITY,
             isValid: true
         });
 
-        emit SessionKeyCreated(sessionKeyAddress, sessionKeys[sessionKeyAddress].validUntil);
+        emit SessionKeyCreated(
+            sessionKeyAddress,
+            sessionKeys[sessionKeyAddress].validUntil
+        );
     }
 
     function validateUserOp(
@@ -131,21 +131,28 @@ contract SmartAccount is IAccount, UUPSUpgradeable, Initializable {
         bytes calldata encodedSignature,
         bytes32 userOpHash
     ) internal view returns (uint256 validationData) {
-        (bool isSessionKey, bytes memory signature) = abi.decode(encodedSignature, (bool, bytes));
-         
+        (bool isSessionKey, bytes memory signature) = abi.decode(
+            encodedSignature,
+            (bool, bytes)
+        );
+
         if (isSessionKey) {
-            // For session keys, recover address from ECDSA signature and verify validity
-            bytes32 hash = MessageHashUtils.toEthSignedMessageHash(userOpHash);
-            address recoveredAddress = hash.recover(signature);
-            
+            // For session keys, recover address from signature and verify validity
+            address recoveredAddress = ECDSA.recover(userOpHash, signature);
+
             SessionKeyData memory sessionData = sessionKeys[recoveredAddress];
-            if (sessionData.isValid && sessionData.validUntil > block.timestamp) {
+            if (
+                sessionData.isValid && sessionData.validUntil > block.timestamp
+            ) {
                 return 0;
             }
             return SIG_VALIDATION_FAILED;
         } else {
             // Owner signature validation using WebAuthn
-            WebAuthn.WebAuthnAuth memory auth = abi.decode(signature, (WebAuthn.WebAuthnAuth));
+            WebAuthn.WebAuthnAuth memory auth = abi.decode(
+                signature,
+                (WebAuthn.WebAuthnAuth)
+            );
             bool isValidOwner = WebAuthn.verify({
                 challenge: abi.encode(userOpHash),
                 requireUV: false,
@@ -167,6 +174,12 @@ contract SmartAccount is IAccount, UUPSUpgradeable, Initializable {
         return caller == ownerAddress;
     }
 
+    function _onlyOwner() internal view {
+        //directly from EOA owner, or through the account itself (which gets redirected through execute())
+        require(msg.sender == owner || msg.sender == address(this), "only owner");
+    }
+
+
     function _payPrefund(uint256 missingAccountFunds) internal {
         if (missingAccountFunds != 0) {
             (bool success, ) = payable(msg.sender).call{
@@ -174,6 +187,13 @@ contract SmartAccount is IAccount, UUPSUpgradeable, Initializable {
                 gas: type(uint256).max
             }("");
             (success);
+        }
+    }
+
+    function _call(address target, uint256 value, bytes memory data) internal {
+        (bool success, bytes memory result) = target.call{value: value}(data);
+        if (!success) {
+            revert SmartAccount__CallFailed(result);
         }
     }
 
