@@ -21,6 +21,7 @@ import { toWebAuthnAccount } from "viem/account-abstraction";
 import { toGardenSmartAccount } from "@/utils/toGardenSmartAccount";
 import { toSerializablePackedUserOp } from "@/utils/conversions";
 import { encryptedStorage } from "@/utils/encryptedStorage";
+import { toast } from "sonner";
 
 const CREATE_SESSION_KEY_ABI = {
   inputs: [{ name: "sessionKeyAddress", type: "address" }],
@@ -52,6 +53,7 @@ interface WalletContextType {
     data?: `0x${string}`
   ) => Promise<any>;
   logout: () => void;
+  client: any;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -275,6 +277,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           address: state.smartAccount.address,
         });
 
+        toast.success("Session key created successfully");
+
         await encryptedStorage.store(`sessionKey_${state.accountAddress}`, {
           address: sessionKey.address,
           privateKey: privateKey,
@@ -314,6 +318,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         owner: account,
         address: state.smartAccount.address,
       });
+
+      toast.success("Session key deleted successfully");
   
       setState((prev) => ({
         ...prev,
@@ -426,6 +432,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         signMessage,
         sendUserOperation,
         logout,
+        client
       }}
     >
       {children}
