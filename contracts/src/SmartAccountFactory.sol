@@ -40,7 +40,7 @@ contract SmartAccountFactory {
         account = SmartAccount(payable(accountAddress));
         
         if (!alreadyDeployed) {
-            account.initialize(pubKeyX, pubKeyY);
+            account.initialize(pubKeyX, pubKeyY, accountAddress);
         }
     }
     
