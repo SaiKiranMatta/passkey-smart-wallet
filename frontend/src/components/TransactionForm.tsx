@@ -39,7 +39,7 @@ const TransactionForm = () => {
   };
 
   return (
-    <div className="w-full max-w-md mx-auto ">
+    <div className="w-full max-w-md mx-auto text-gray-800 ">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label htmlFor="address" className="block text-sm font-medium text-gray-700 mb-1">
