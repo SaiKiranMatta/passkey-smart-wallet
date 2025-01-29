@@ -67,8 +67,6 @@ export async function toGardenSmartAccount(
 
   let address = parameters.address;
 
-  toCoinbaseSmartAccount;
-
   const entryPoint = {
     abi: entryPoint07Abi,
     address: process.env.NEXT_PUBLIC_ENTRYPOINT_ADDRESS as Address,
@@ -218,13 +216,17 @@ export async function toGardenSmartAccount(
         },
       });
 
-      return await this.sign!({ hash });
+      return await sign({ 
+        hash,
+        owner,
+        sessionKey
+      });
     },
   });
 }
 
 // Helper Functions
-
+/** @internal */
 function encodeWebAuthnPubKey(owner: WebAuthnAccount): Hex {
   const cleanHex = owner.publicKey.startsWith("0x")
     ? owner.publicKey.slice(2)
@@ -251,7 +253,7 @@ function encodeWebAuthnPubKey(owner: WebAuthnAccount): Hex {
 }
 
 /** @internal */
-export function toWebAuthnSignature({
+function toWebAuthnSignature({
   webauthn,
   signature,
 }: {
@@ -295,6 +297,31 @@ export function toWebAuthnSignature({
   );
 }
 
+/** @internal */
+async function sign(parameters: {
+  hash: Hex;
+  owner: WebAuthnAccount;
+  sessionKey?: LocalAccount;
+}): Promise<Hex> {
+  const { hash, owner, sessionKey } = parameters;
+
+  // If session key is available and valid, use it for signing
+  if (sessionKey?.sign) {
+    const signature = await sessionKey.sign({ hash });
+    return encodeSignature({ isSessionKey: true, signature });
+  }
+
+  // Otherwise use WebAuthn signing
+  const { signature, webauthn } = await owner.sign({
+    hash: parameters.hash,
+  });
+  return encodeSignature({
+    isSessionKey: false,
+    signature: toWebAuthnSignature({ webauthn, signature }),
+  });
+}
+
+/** @internal */
 function encodeSignature({
   isSessionKey,
   signature,
@@ -302,7 +329,7 @@ function encodeSignature({
   isSessionKey: boolean;
   signature: Hex;
 }): Hex {
-  const encodedSignature = encodeAbiParameters(
+  return encodeAbiParameters(
     [
       {
         name: "isSessionKey",
@@ -315,7 +342,4 @@ function encodeSignature({
     ],
     [isSessionKey, signature]
   );
-  console.log("isSessionKey", isSessionKey);
-  console.log("encodedSignature", encodedSignature);
-  return encodedSignature;
 }
