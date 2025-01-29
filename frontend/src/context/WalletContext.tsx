@@ -182,7 +182,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           factory,
           factoryData,
           callData,
-          callGasLimit: 10000n,
+          callGasLimit: 200000n,
           verificationGasLimit: 20000000n,
           preVerificationGas: 20000n,
           maxFeePerGas,
@@ -198,8 +198,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           sender: state.smartAccount.address,
           nonce: BigInt(nonce),
           callData,
-          callGasLimit: 10000n,
-          verificationGasLimit: 200000n,
+          callGasLimit: 100000n,
+          verificationGasLimit: 20000000n,
           preVerificationGas: 20000n,
           maxFeePerGas,
           maxPriorityFeePerGas,
@@ -215,43 +215,34 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
       // Sign the user operation
-      let signature = await state.smartAccount.signUserOperation(
-        userOperation
-      );
-
-      console.log("signature received", signature);
-      // Remove 768 chars from start (keeping 0x) and 126 chars from end
-      signature = signature.slice(0, 2) + signature.slice(706, -64);
-
-      console.log("sliced signature: ", signature);
-
+      let signature = await state.smartAccount.signUserOperation(userOperation);
 
       userOperation.signature = signature;
 
-      const packedUserOp = toPackedUserOperation(
-        userOperation
-      );
+      const packedUserOp = toPackedUserOperation(userOperation);
 
       packedUserOp.signature = signature;
       const serializableUserOp = toSerializablePackedUserOp(packedUserOp);
 
       const response = await fetch(`${backendUrl}/send-transaction`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(serializableUserOp),
       });
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || 'Failed to send transaction');
+        throw new Error(error.error || "Failed to send transaction");
       }
 
       const { txHash } = await response.json();
 
       // Wait for the transaction to be mined
-      const receipt = await client.waitForTransactionReceipt({ hash: txHash as `0x${string}` });
+      const receipt = await client.waitForTransactionReceipt({
+        hash: txHash as `0x${string}`,
+      });
       return receipt;
     } catch (error) {
       setState((prev) => ({
@@ -299,7 +290,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
         await encryptedStorage.store(`sessionKey_${state.accountAddress}`, {
           address: sessionKey.address,
-          privateKey: privateKey
+          privateKey: privateKey,
         });
 
         setState((prev) => ({
@@ -341,16 +332,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const initializeFromStorage = async () => {
       const currentSession = localStorage.getItem("current_session");
       if (currentSession) {
-        const { email, credential, accountAddress } = JSON.parse(currentSession);
-        
+        const { email, credential, accountAddress } =
+          JSON.parse(currentSession);
+
         try {
           // Try to retrieve session key from encrypted storage
-          const storedSessionKey = await encryptedStorage.retrieve(`sessionKey_${accountAddress}`);
-          
+          const storedSessionKey = await encryptedStorage.retrieve(
+            `sessionKey_${accountAddress}`
+          );
+
           const account = toWebAuthnAccount({ credential });
-          
+
           // Recreate session key account if it exists
-          const sessionKey = storedSessionKey 
+          const sessionKey = storedSessionKey
             ? privateKeyToAccount(storedSessionKey.privateKey as `0x${string}`)
             : undefined;
 
@@ -374,7 +368,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           setState((prev) => ({
             ...prev,
             isLoading: false,
-            error: error instanceof Error ? error.message : "Wallet initialization failed",
+            error:
+              error instanceof Error
+                ? error.message
+                : "Wallet initialization failed",
           }));
         }
       }
