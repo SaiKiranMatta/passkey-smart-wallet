@@ -22,7 +22,6 @@ import { toGardenSmartAccount } from "@/utils/toGardenSmartAccount";
 import { toSerializablePackedUserOp } from "@/utils/conversions";
 import { encryptedStorage } from "@/utils/encryptedStorage";
 
-// ABI for the createSessionKey function
 const CREATE_SESSION_KEY_ABI = {
   inputs: [{ name: "sessionKeyAddress", type: "address" }],
   name: "createSessionKey",
@@ -45,6 +44,7 @@ interface WalletContextType {
     credential: CreateWebAuthnCredentialReturnType
   ) => Promise<void>;
   createSessionKey: () => Promise<void>;
+  deleteSessionKey: () => Promise<void>;
   signMessage: (message: string) => Promise<void>;
   sendUserOperation: (
     to: Address,
@@ -137,19 +137,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // Get the current nonce
       const nonce = await state.smartAccount.getNonce();
 
-      // Check if account is deployed
       const isDeployed = await state.smartAccount.isDeployed();
 
-      // Get initCode if account is not deployed
-
-      // Get the current gas prices
       const { maxFeePerGas, maxPriorityFeePerGas } =
         await client.estimateFeesPerGas();
 
-      // Encode the function call
       const callData = await state.smartAccount.encodeCalls([
         {
           to,
@@ -161,9 +155,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const paymaster =
         (process.env.NEXT_PUBLIC_PAYMASTER_ADDRESS as `0x${string}`) ?? "0x";
 
-      // Calculate validUntil timestamp (1 hour from now)
       const validUntil = Math.floor(Date.now() / 1000) + 3600;
-      const validAfter = Math.floor(Date.now() / 1000) - 3600; // current timestamp
+      const validAfter = Math.floor(Date.now() / 1000) - 3600; 
 
       const paymasterData = concat([
         pad(numberToHex(validUntil), { size: 32 }),
@@ -214,7 +207,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       //wait 2 seconds before signing the transaction to prevent the webauth failing
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
-      // Sign the user operation
       let signature = await state.smartAccount.signUserOperation(userOperation);
 
       userOperation.signature = signature;
@@ -239,7 +231,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
       const { txHash } = await response.json();
 
-      // Wait for the transaction to be mined
       const receipt = await client.waitForTransactionReceipt({
         hash: txHash as `0x${string}`,
       });
@@ -262,21 +253,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // Generate a new private key for the session
       const privateKey = generatePrivateKey();
       const sessionKey = privateKeyToAccount(privateKey);
 
-      // Encode the createSessionKey function call
       const data = encodeFunctionData({
         abi: [CREATE_SESSION_KEY_ABI],
         functionName: "createSessionKey",
         args: [sessionKey.address],
       });
 
-      // Send the user operation to create session key
       await sendUserOperation(state.smartAccount.address, 0n, data);
 
-      // Update smart account with session key
       const credential = state.credential;
       if (credential) {
         const account = toWebAuthnAccount({ credential });
@@ -313,6 +300,37 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const deleteSessionKey = async () => {
+    if (!state.smartAccount || !state.sessionKey) return;
+  
+    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+  
+    try {
+      await encryptedStorage.remove(`sessionKey_${state.accountAddress}`);
+  
+      const account = toWebAuthnAccount({ credential: state.credential! });
+      const updatedSmartAccount = await toGardenSmartAccount({
+        client,
+        owner: account,
+        address: state.smartAccount.address,
+      });
+  
+      setState((prev) => ({
+        ...prev,
+        smartAccount: updatedSmartAccount,
+        sessionKey: null,
+        isLoading: false,
+      }));
+    } catch (error) {
+      console.error("Error deleting session key:", error);
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: error instanceof Error ? error.message : "Session key deletion failed",
+      }));
+    }
+  };
+
   const signMessage = async (message: string) => {
     if (!state.smartAccount) return;
 
@@ -336,14 +354,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           JSON.parse(currentSession);
 
         try {
-          // Try to retrieve session key from encrypted storage
           const storedSessionKey = await encryptedStorage.retrieve(
             `sessionKey_${accountAddress}`
           );
 
           const account = toWebAuthnAccount({ credential });
 
-          // Recreate session key account if it exists
           const sessionKey = storedSessionKey
             ? privateKeyToAccount(storedSessionKey.privateKey as `0x${string}`)
             : undefined;
@@ -406,6 +422,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         ...state,
         initializeWallet,
         createSessionKey,
+        deleteSessionKey,
         signMessage,
         sendUserOperation,
         logout,
