@@ -3,6 +3,7 @@ package ethereum
 import (
 	"crypto/ecdsa"
 	"fmt"
+	"log"
 	"math/big"
 	"strconv"
 	"wallet-backend/config"
@@ -93,6 +94,7 @@ func (s *EthereumService) SendUserOperation(userOp db.PackedUserOp) (string, err
 		bundlerAddress,
 	)
 	if err != nil {
+		log.Printf("Failed to send transaction %v", err)
 		return "", fmt.Errorf("failed to send transaction: %w", err)
 	}
 
